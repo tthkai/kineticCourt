@@ -5,58 +5,75 @@ import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import {
   Plus, LogOut, Clock, MapPin, DollarSign, Calendar,
-  Star, Edit3, ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Bell
+  Star, Edit3, ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Bell, Loader2
 } from 'lucide-react';
 
 const TABS = ['Sân của tôi', 'Booking', 'Doanh thu'];
 
 const CourtOwnerDashboard = () => {
-  const { logout, user, userProfile } = useAuth();
+  // SỬA ĐỔI 1: Dùng currentUser từ AuthContext của chúng ta
+  const { logout, currentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('Sân của tôi');
   const [courts, setCourts] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddCourt, setShowAddCourt] = useState(false);
 
+  // Lấy tên từ email (vd: abc@gmail.com -> abc)
+  const displayName = currentUser?.email?.split('@')[0] || 'Chủ sân';
+
   useEffect(() => {
     fetchData();
-  }, [user]);
+  }, [currentUser]);
 
   const fetchData = async () => {
-    if (!user) return;
+    if (!currentUser) return;
     setLoading(true);
     try {
-      const q = query(collection(db, 'courts'), where('ownerId', '==', user.uid));
+      // Tìm các sân thuộc về chủ sân này
+      const q = query(collection(db, 'courts'), where('ownerId', '==', currentUser.uid));
       const snap = await getDocs(q);
       const ownedCourts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setCourts(ownedCourts);
 
+      // Nếu có sân, tìm các booking đặt vào các sân đó
       if (ownedCourts.length > 0) {
         const courtIds = ownedCourts.map(c => c.id);
         const bSnap = await getDocs(query(collection(db, 'bookings'), where('courtId', 'in', courtIds)));
         setBookings(bSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error("Lỗi khi tải dữ liệu:", e); 
+    }
     setLoading(false);
   };
 
   const handleAddCourt = async (courtData) => {
     const newCourt = {
       ...courtData,
-      ownerId: user.uid,
-      ownerName: userProfile?.displayName,
+      ownerId: currentUser.uid,
+      ownerName: displayName,
       status: 'pending',
       rating: 0,
       createdAt: serverTimestamp(),
     };
-    const ref = await addDoc(collection(db, 'courts'), newCourt);
-    setCourts(prev => [...prev, { id: ref.id, ...newCourt }]);
-    setShowAddCourt(false);
+    try {
+      const ref = await addDoc(collection(db, 'courts'), newCourt);
+      setCourts(prev => [...prev, { id: ref.id, ...newCourt }]);
+      setShowAddCourt(false);
+    } catch (e) {
+      console.error("Lỗi khi thêm sân mới:", e);
+      alert("Có lỗi xảy ra, vui lòng kiểm tra quyền Firestore!");
+    }
   };
 
   const toggleCourtStatus = async (courtId, currentActive) => {
-    await updateDoc(doc(db, 'courts', courtId), { active: !currentActive });
-    setCourts(prev => prev.map(c => c.id === courtId ? { ...c, active: !currentActive } : c));
+    try {
+      await updateDoc(doc(db, 'courts', courtId), { active: !currentActive });
+      setCourts(prev => prev.map(c => c.id === courtId ? { ...c, active: !currentActive } : c));
+    } catch (e) {
+      console.error("Lỗi cập nhật trạng thái:", e);
+    }
   };
 
   const totalRevenue = bookings.reduce((sum, b) => sum + (b.amount || 0), 0);
@@ -68,21 +85,21 @@ const CourtOwnerDashboard = () => {
       <div style={S.header}>
         <div style={S.headerLeft}>
           <div style={S.ownerBadge}>🏟️ CHỦ SÂN</div>
-          <h2 style={S.ownerName}>{userProfile?.displayName}</h2>
+          <h2 style={S.ownerName}>{displayName}</h2>
         </div>
         <div style={S.headerRight}>
           <div style={S.statusPill}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: userProfile?.courtStatus === 'approved' ? '#4caf50' : '#ff9500', display: 'inline-block' }} />
-            {userProfile?.courtStatus === 'approved' ? 'Đã xác minh' : 'Chờ xác minh'}
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4caf50', display: 'inline-block' }} />
+            Đã xác minh
           </div>
-          <button style={S.logoutBtn} onClick={logout}><LogOut size={14} /></button>
+          <button style={S.logoutBtn} onClick={logout}><LogOut size={16} /></button>
         </div>
       </div>
 
       {/* Quick stats */}
       <div style={S.statsRow}>
-        <QuickStat icon="🏟️" label="Sân đang quản lý" value={courts.length} />
-        <QuickStat icon="📅" label="Booking xác nhận" value={confirmedBookings} color="#c3ff00" />
+        <QuickStat icon="🏟️" label="Sân quản lý" value={courts.length} />
+        <QuickStat icon="📅" label="Đã xác nhận" value={confirmedBookings} color="#c3ff00" />
         <QuickStat icon="💰" label="Doanh thu" value={`${(totalRevenue / 1000).toFixed(0)}k`} color="#00d4ff" />
       </div>
 
@@ -96,7 +113,12 @@ const CourtOwnerDashboard = () => {
       {/* Content */}
       <div style={S.content}>
         {loading ? (
-          <div style={S.center}><div style={S.spinner} /></div>
+          <div style={S.center}>
+            <Loader2 size={32} color="#00d4ff" className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+            <p style={{color: '#888', marginTop: 10}}>Đang tải dữ liệu...</p>
+            {/* Inject keyframes for spinner */}
+            <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+          </div>
         ) : (
           <>
             {activeTab === 'Sân của tôi' && (
@@ -177,7 +199,7 @@ const CourtsTab = ({ courts, onToggle, onAddCourt }) => (
 const BookingTab = ({ bookings, courts }) => (
   <div>
     {bookings.length === 0 ? (
-      <div style={S.emptyState}><p>📅</p><p>Chưa có booking nào</p></div>
+      <div style={S.emptyState}><p style={{fontSize: '2rem'}}>📅</p><p>Chưa có booking nào</p></div>
     ) : (
       bookings.map(b => {
         const court = courts.find(c => c.id === b.courtId);
@@ -186,7 +208,7 @@ const BookingTab = ({ bookings, courts }) => (
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <div>
                 <p style={{ margin: 0, fontWeight: 700, fontSize: '0.9rem' }}>{b.playerName || 'Khách hàng'}</p>
-                <p style={{ margin: 0, color: '#888', fontSize: '0.75rem' }}>{court?.name}</p>
+                <p style={{ margin: 0, color: '#888', fontSize: '0.75rem' }}>{court?.name || 'Sân đã bị xóa'}</p>
               </div>
               <span style={S.statusChip(b.status || 'pending')}>{STATUS_LABEL[b.status] || 'Chờ xác nhận'}</span>
             </div>
@@ -265,13 +287,13 @@ const AddCourtModal = ({ onClose, onSubmit }) => {
         </div>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label="Tên sân *" value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder="VD: Sân Cầu Lông Kinetic" />
-          <Field label="Địa chỉ *" value={form.location} onChange={v => setForm({ ...form, location: v })} placeholder="Số nhà, đường, quận" />
-          <Field label="Quận" value={form.district} onChange={v => setForm({ ...form, district: v })} placeholder="VD: Quận 1" />
-          <Field label="Giá (VD: 80k - 120k)" value={form.price} onChange={v => setForm({ ...form, price: v })} placeholder="80k - 120k" />
+          <Field label="Địa chỉ *" value={form.location} onChange={v => setForm({ ...form, location: v })} placeholder="Số nhà, đường, phường..." />
+          <Field label="Quận/Huyện" value={form.district} onChange={v => setForm({ ...form, district: v })} placeholder="VD: Quận 10" />
+          <Field label="Giá (VNĐ/giờ)" value={form.price} onChange={v => setForm({ ...form, price: v })} placeholder="VD: 80k - 120k" />
           <Field label="Giờ hoạt động" value={form.hours} onChange={v => setForm({ ...form, hours: v })} placeholder="06:00 - 22:00" />
-          <Field label="Tags (phân cách bằng dấu phẩy)" value={form.tags} onChange={v => setForm({ ...form, tags: v })} placeholder="Sân gỗ, Căng tin, Gần trung tâm" />
+          <Field label="Tiện ích (phân cách bằng dấu phẩy)" value={form.tags} onChange={v => setForm({ ...form, tags: v })} placeholder="Thảm PVC, Căng tin, Trông xe..." />
           <div>
-            <label style={S.fieldLabel}>Mô tả</label>
+            <label style={S.fieldLabel}>Mô tả chi tiết</label>
             <textarea
               style={{ ...S.fieldInput, height: 80, resize: 'vertical' }}
               value={form.description}
@@ -280,9 +302,9 @@ const AddCourtModal = ({ onClose, onSubmit }) => {
             />
           </div>
           <div style={{ background: 'rgba(255,149,0,0.1)', border: '1px solid rgba(255,149,0,0.2)', borderRadius: 8, padding: 10, fontSize: '0.75rem', color: '#ff9500' }}>
-            ⚠️ Sân sẽ được Admin xét duyệt trước khi hiển thị công khai
+            ⚠️ Sau khi tạo, thông tin sẽ được lưu ngay vào hệ thống dữ liệu đám mây của bạn.
           </div>
-          <button type="submit" style={S.submitBtn}>Gửi yêu cầu đăng ký</button>
+          <button type="submit" style={S.submitBtn}>Tạo Sân Ngay</button>
         </form>
       </div>
     </div>
@@ -309,7 +331,7 @@ const MetaItem = ({ icon, text }) => (
 const Field = ({ label, value, onChange, placeholder }) => (
   <div>
     <label style={S.fieldLabel}>{label}</label>
-    <input style={S.fieldInput} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
+    <input required style={S.fieldInput} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
   </div>
 );
 
@@ -322,7 +344,19 @@ const STATUS_CHIP_COLORS = {
 };
 
 const S = {
-  root: { height: '100dvh', background: '#0a0a0a', color: 'white', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  // SỬA ĐỔI 2: ÉP KHUNG VÀO CHUẨN MOBILE-FIRST (maxWidth 480px, căn giữa)
+  root: { 
+    maxWidth: '480px', 
+    margin: '0 auto', 
+    height: '100dvh', 
+    background: '#0a0a0a', 
+    color: 'white', 
+    display: 'flex', 
+    flexDirection: 'column', 
+    overflow: 'hidden',
+    position: 'relative',
+    boxShadow: '0 0 20px rgba(0,0,0,0.5)'
+  },
   header: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.07)',
@@ -377,10 +411,9 @@ const S = {
     borderRadius: 12, padding: 14, marginBottom: 10,
   },
   emptyState: { textAlign: 'center', padding: '40px 0', color: '#555' },
-  center: { display: 'flex', justifyContent: 'center', paddingTop: 60 },
-  spinner: { width: 36, height: 36, border: '3px solid rgba(0,212,255,0.2)', borderTopColor: '#00d4ff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
-  modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
-  modal: { width: '100%', maxWidth: 500, background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '90vh', overflowY: 'auto' },
+  center: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
+  modalOverlay: { position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
+  modal: { width: '100%', background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '90vh', overflowY: 'auto' },
   fieldLabel: { display: 'block', color: '#888', fontSize: '0.75rem', marginBottom: 6 },
   fieldInput: { width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '10px 12px', color: 'white', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' },
   submitBtn: { background: '#00d4ff', color: 'black', border: 'none', borderRadius: 12, padding: 14, fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer', marginTop: 4 },
