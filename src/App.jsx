@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import './index.css';
-import { Search, Trophy, Wallet, User as UserIcon, MapPin, Star, Calendar, Clock, CreditCard, ChevronRight, Plus, Menu, Crosshair, SlidersHorizontal, Map as MapIcon, CheckCircle, Zap, Rocket, History, Shield, Users, X } from 'lucide-react';
+import { Search, Trophy, Wallet, User as UserIcon, MapPin, Star, Calendar, Clock, CreditCard, ChevronRight, Plus, Menu, Crosshair, SlidersHorizontal, Map as MapIcon, CheckCircle, Zap, Rocket, History, Shield, Users, X, LogOut } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { COURTS, MATCHES, USER_STATS, TRANSACTIONS, PLAYERS, MATCH_HISTORY, GROUP_DEBTS } from './data/mockData';
+// CHỈ GIỮ LẠI DATA CÁ NHÂN TỪ MOCK DATA
+import { USER_STATS, TRANSACTIONS, PLAYERS, MATCH_HISTORY, GROUP_DEBTS } from './data/mockData';
 import BookingDetail from './components/BookingDetail';
 import { MatchHistory, Achievements, SettingsPage } from './components/ProfileSubScreens';
 import MatchDetail from './components/MatchDetail';
@@ -12,6 +13,12 @@ import CreateMatchModal from './components/CreateMatchModal';
 import MatchCard from './components/MatchCard';
 import PaymentMethodsModal from './components/PaymentMethodsModal';
 import SplitBillModal from './components/SplitBillModal';
+
+// IMPORT FIREBASE LOGIC
+import { doc, setDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from './firebase';
+import { useData } from './context/DataContext';
+import { useAuth } from './context/AuthContext'; 
 
 // Notification/Toast Component
 const Toast = ({ message, type = 'success', onClose }) => {
@@ -52,7 +59,6 @@ const BottomNav = ({ activeTab, setActiveTab }) => {
   );
 };
 
-
 // Helper component to handle map movement
 const MapHandler = ({ center, zoom = 15, bounds = null }) => {
   const map = useMap();
@@ -69,14 +75,14 @@ const MapHandler = ({ center, zoom = 15, bounds = null }) => {
   return null;
 };
 
-const Courts = ({ onBookCourt }) => {
+const Courts = ({ courtsList, onBookCourt }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDistrict, setFilterDistrict] = useState('Tất cả');
   const [showDistrictSheet, setShowDistrictSheet] = useState(false);
   const [startY, setStartY] = useState(0);
   const [currentY, setCurrentY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedCourt, setSelectedCourt] = useState(COURTS[0]);
+  const [selectedCourt, setSelectedCourt] = useState(courtsList[0] || null);
 
   const translateY = isDragging ? Math.max(0, currentY - startY) : 0;
 
@@ -110,10 +116,9 @@ const Courts = ({ onBookCourt }) => {
       .replace(/[đĐ]/g, "d");
   };
 
-  const filteredCourts = COURTS.filter(court => {
+  const filteredCourts = courtsList.filter(court => {
     const normSearch = normalize(searchQuery);
     const normLocation = normalize(court.location);
-    const normDistrict = normalize(filterDistrict);
     const normName = normalize(court.name);
 
     const matchesSearch = normName.includes(normSearch) || normLocation.includes(normSearch);
@@ -122,7 +127,6 @@ const Courts = ({ onBookCourt }) => {
     return matchesSearch && matchesDistrict;
   });
 
-  // Calculate bounds for the current filter
   const currentBounds = useMemo(() => {
     if (filteredCourts.length > 0) {
       return filteredCourts.map(c => [c.lat, c.lng]);
@@ -130,7 +134,6 @@ const Courts = ({ onBookCourt }) => {
     return null;
   }, [filteredCourts]);
 
-  // Smart Selection: When filter results change, auto-select the first match
   useEffect(() => {
     if (filteredCourts.length > 0) {
       if (!selectedCourt || !filteredCourts.some(fc => fc.id === selectedCourt.id)) {
@@ -141,7 +144,6 @@ const Courts = ({ onBookCourt }) => {
     }
   }, [filterDistrict, searchQuery]);
 
-  // Custom Icon Logic (Neon Circle with Pin)
   const createCustomIcon = (isActive, isVisible) => {
     return L.divIcon({
       className: 'custom-marker',
@@ -174,14 +176,11 @@ const Courts = ({ onBookCourt }) => {
             attribution='&copy; CARTO'
             url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           />
-          
           <MapHandler 
             center={(!filterDistrict || filterDistrict === 'Tất cả') && !searchQuery ? null : (selectedCourt ? [selectedCourt.lat, selectedCourt.lng] : null)}
             bounds={currentBounds}
           />
-
-          {/* Render ALL courts, use opacity/classes for filtering */}
-          {COURTS.map(court => {
+          {courtsList.map(court => {
             const isVisible = filteredCourts.some(fc => fc.id === court.id);
             const isActive = selectedCourt?.id === court.id;
             return (
@@ -189,9 +188,7 @@ const Courts = ({ onBookCourt }) => {
                 key={court.id} 
                 position={[court.lat, court.lng]}
                 icon={createCustomIcon(isActive, isVisible)}
-                eventHandlers={{
-                  click: () => setSelectedCourt(court)
-                }}
+                eventHandlers={{ click: () => setSelectedCourt(court) }}
               />
             );
           })}
@@ -214,9 +211,7 @@ const Courts = ({ onBookCourt }) => {
             />
             <Crosshair size={20} color="#c3ff00" />
           </div>
-          <button className="icon-btn-neon">
-            <SlidersHorizontal size={24} />
-          </button>
+          <button className="icon-btn-neon"><SlidersHorizontal size={24} /></button>
         </div>
 
         <div className="district-selector-trigger" onClick={() => setShowDistrictSheet(true)}>
@@ -225,32 +220,11 @@ const Courts = ({ onBookCourt }) => {
           <ChevronRight size={16} color="white" style={{ transform: 'rotate(90deg)' }} />
         </div>
 
-        {/* Bottom Sheet Backdrop */}
-        <div 
-          className={`bottom-sheet-overlay ${showDistrictSheet ? 'active' : ''}`}
-          onClick={() => setShowDistrictSheet(false)}
-        ></div>
+        <div className={`bottom-sheet-overlay ${showDistrictSheet ? 'active' : ''}`} onClick={() => setShowDistrictSheet(false)}></div>
 
-        {/* District Bottom Sheet */}
-        <div 
-          className={`district-bottom-sheet ${showDistrictSheet ? 'active' : ''} ${isDragging ? 'dragging' : ''}`}
-          style={{ 
-            transform: `translateX(-50%) translateY(${translateY}px)`
-          }}
-        >
-          <div 
-            className="drag-handle" 
-            style={{ cursor: 'grab' }}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-          ></div>
-          <div 
-            className="sheet-header"
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-          >
+        <div className={`district-bottom-sheet ${showDistrictSheet ? 'active' : ''} ${isDragging ? 'dragging' : ''}`} style={{ transform: `translateX(-50%) translateY(${translateY}px)` }}>
+          <div className="drag-handle" style={{ cursor: 'grab' }} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}></div>
+          <div className="sheet-header" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
             <h2 style={{ margin: 0 }}>Chọn khu vực</h2>
             <button className="icon-btn-transparent" onClick={() => setShowDistrictSheet(false)}>
               <X size={24} color="white" />
@@ -262,10 +236,7 @@ const Courts = ({ onBookCourt }) => {
                 <div 
                   key={d} 
                   className={`district-chip-btn ${filterDistrict === d ? 'active' : ''}`}
-                  onClick={() => {
-                    setFilterDistrict(d);
-                    setShowDistrictSheet(false);
-                  }}
+                  onClick={() => { setFilterDistrict(d); setShowDistrictSheet(false); }}
                 >
                   {d}
                 </div>
@@ -283,7 +254,7 @@ const Courts = ({ onBookCourt }) => {
                   <h3 style={{ margin: 0, color: 'white', fontSize: '1rem' }}>{selectedCourt.name}</h3>
                   <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.65rem', margin: '2px 0 0' }}>{selectedCourt.location}</p>
                 </div>
-                <div className="badge-pop">PHỔ BIỂN</div>
+                <div className="badge-pop">PHỔ BIẾN</div>
                 <div className="rating-overlay">
                    <Star size={10} fill="#c3ff00" color="#c3ff00" />
                    <span>{selectedCourt.rating}</span>
@@ -436,63 +407,108 @@ const GroupWallet = ({ balance, transactions, debts, onDeposit, onOpenDeposit, o
   );
 };
 
+// CẬP NHẬT: Component Profile sử dụng Dữ liệu Lai và khôi phục giao diện đầy đủ
 const Profile = ({ onMenuClick }) => {
-  const progressPercent = (USER_STATS.xp / USER_STATS.maxXp) * 100;
+  const { user, userProfile, logout } = useAuth();
+  
+  // 1. Xác định tài khoản đặc biệt (Dùng cho Nguyễn Văn A)
+  const specialEmails = ['hoangthanhtung2801@gmail.com', 'giakhang@gmail.com'];
+  const isSpecialAccount = specialEmails.includes(user?.email);
+  const displayData = isSpecialAccount ? USER_STATS : (userProfile || USER_STATS);
+
+  // 2. Logic hiển thị chữ cái trong vòng tròn Avatar (ME hoặc HT)
+  const getAvatarContent = () => {
+    if (isSpecialAccount) return "ME"; 
+    if (displayData.avatar && displayData.avatar.startsWith('http')) return null; 
+    
+    const nameParts = displayData.name ? displayData.name.split(' ') : ['?'];
+    if (nameParts.length >= 2) {
+      return (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase();
+    }
+    return nameParts[0][0].toUpperCase();
+  };
+
+  // 3. ĐỒNG BỘ LOGIC BIẾN (FIX NGƯỢC DỮ LIỆU)
+  const xp = displayData.xp || 0;
+  const maxXp = displayData.maxXp || 1000;
+  const progressPercent = (xp / maxXp) * 100;
+  
+  const levelNum = displayData.levelNum || (isSpecialAccount ? 12 : Math.floor(xp / 100) + 1);
+  
+  // NẾU LÀ TÀI KHOẢN ĐẶC BIỆT THÌ ĐẢO NGƯỢC BIẾN CHO KHỚP MOCK DATA
+  const shieldText = isSpecialAccount ? displayData.level : (displayData.rank || 'Tân binh');
+  const rankValue = isSpecialAccount ? displayData.rank : (displayData.level || 1);
+
   const recentMatches = MATCH_HISTORY.slice(0, 3);
 
   return (
     <div className="screen-content" style={{ paddingBottom: '100px' }}>
-      <div className="profile-header mt-20">
-        <div className="avatar-wrapper" style={{ position: 'relative' }}>
-          <img 
-            src={USER_STATS.avatar} 
-            style={{ width: 100, height: 100, borderRadius: '50%', border: '4px solid var(--primary)', boxShadow: '0 0 20px rgba(195, 255, 0, 0.4)' }} 
-            alt="My Avatar" 
-          />
-          <div className="level-badge-float" style={{ 
-            position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)',
-            background: 'var(--primary)', color: 'black',
-            padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '900',
-            boxShadow: '0 4px 10px rgba(0,0,0,0.5)', whiteSpace: 'nowrap'
+      <div className="profile-header mt-20" style={{ textAlign: 'center' }}>
+        <div className="avatar-wrapper" style={{ position: 'relative', display: 'inline-block' }}>
+          <div style={{ 
+            width: 120, height: 120, borderRadius: '50%', background: 'var(--primary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '2.5rem', fontWeight: 'bold', color: 'black',
+            boxShadow: '0 0 30px rgba(195, 255, 0, 0.5)', border: '4px solid #000',
+            overflow: 'hidden'
           }}>
-            LEVEL 12
+            {getAvatarContent() ? (
+              <span>{getAvatarContent()}</span>
+            ) : (
+              <img src={displayData.avatar} style={{width:'100%', height:'100%', objectFit:'cover'}} alt="Avatar" />
+            )}
+          </div>
+          
+          <div style={{ 
+            position: 'absolute', bottom: -12, left: '50%', transform: 'translateX(-50%)',
+            background: 'var(--primary)', color: 'black', padding: '6px 18px',
+            borderRadius: '25px', fontSize: '0.8rem', fontWeight: '900',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.6)', border: '2px solid #000', whiteSpace: 'nowrap'
+          }}>
+            LEVEL {levelNum}
           </div>
         </div>
-        <h2 style={{ fontSize: '2rem', marginTop: '20px', marginBottom: '5px' }}>{USER_STATS.name}</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 'bold' }}>
-          <Shield size={16} />
-          <span>Level {USER_STATS.level}</span>
+        
+        <h2 style={{ fontSize: '2.5rem', marginTop: '25px', marginBottom: '8px' }}>{displayData.name}</h2>
+        
+        {/* HIỂN THỊ CHỮ CẠNH KHIÊN: Tân binh / Trung bình */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--primary)', fontSize: '1rem', fontWeight: 'bold' }}>
+          <Shield size={18} />
+          <span>{shieldText}</span>
         </div>
-        <p className="muted" style={{ fontStyle: 'italic', marginTop: '10px' }}>"{USER_STATS.bio}"</p>
+        
+        <p className="muted" style={{ fontStyle: 'italic', marginTop: '15px', fontSize: '1.1rem' }}>
+          "{displayData.bio}"
+        </p>
       </div>
 
-      {/* XP Progress Bar */}
       <div className="glass-card mt-20" style={{ padding: '15px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.8rem' }}>
           <span className="muted">Tiến trình thăng hạng</span>
-          <span>{USER_STATS.xp}/{USER_STATS.maxXp} XP</span>
+          <span>{xp}/{maxXp} XP</span>
         </div>
         <div className="progress-bar-bg" style={{ height: '8px' }}>
           <div className="progress-bar-fill" style={{ width: `${progressPercent}%`, height: '100%' }}></div>
         </div>
-        <p className="muted" style={{ fontSize: '0.7rem', marginTop: '8px' }}>Còn 250 XP nữa để lên Level 13</p>
+        <p className="muted" style={{ fontSize: '0.7rem', marginTop: '8px' }}>Gần tới Level mới rồi!</p>
       </div>
 
       <div className="stats-grid mt-20">
         <div className="glass-card stat-box">
           <p className="muted">Hạng</p>
-          <div className="stat-value neon-text">#{USER_STATS.rank}</div>
+          {/* HIỂN THỊ SỐ TRONG Ô HẠNG: 1 / 125 */}
+          <div className="stat-value neon-text">{rankValue}</div>
         </div>
         <div className="glass-card stat-box">
           <p className="muted">Tỷ lệ thắng</p>
-          <div className="stat-value">67%</div>
+          <div className="stat-value">{displayData.winRate || '0%'}</div>
         </div>
         <div className="glass-card stat-box">
           <p className="muted">Trận đấu</p>
-          <div className="stat-value">{USER_STATS.matches}</div>
+          <div className="stat-value">{displayData.matches || 0}</div>
         </div>
       </div>
-
+      {/* VỊ TRÍ KHÔI PHỤC: VỢT & LỐI CHƠI */}
       <div className="section-title">
         <h3>Vợt & Lối chơi</h3>
       </div>
@@ -501,18 +517,19 @@ const Profile = ({ onMenuClick }) => {
           <p className="muted" style={{ fontSize: '0.7rem', marginBottom: '4px' }}>Lối chơi</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Zap size={16} color="var(--primary)" />
-            <span style={{ fontWeight: 'bold' }}>{USER_STATS.style}</span>
+            <span style={{ fontWeight: 'bold' }}>{displayData.style || "Toàn diện"}</span>
           </div>
         </div>
         <div>
           <p className="muted" style={{ fontSize: '0.7rem', marginBottom: '4px' }}>Vợt yêu thích</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Rocket size={16} color="var(--primary)" />
-            <span style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>{USER_STATS.gear}</span>
+            <span style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>{displayData.gear || "Yonex Arcsaber 11 Play"}</span>
           </div>
         </div>
       </div>
 
+      {/* VỊ TRÍ KHÔI PHỤC: TRẬN ĐẤU GẦN ĐÂY */}
       <div className="section-title">
         <h3>Trận đấu gần đây</h3>
       </div>
@@ -556,12 +573,13 @@ const Profile = ({ onMenuClick }) => {
           </div>
           <ChevronRight size={18} color="#888" />
         </div>
-        <div className="menu-item" onClick={() => onMenuClick('Cài đặt')}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <CheckCircle size={18} color="#888" />
-            <span>Cài đặt hồ sơ</span>
+        
+        {/* Nút Đăng xuất */}
+        <div className="menu-item" onClick={logout} style={{ marginTop: '20px', border: '1px solid rgba(255, 68, 68, 0.2)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ff4444' }}>
+            <LogOut size={18} />
+            <span>Đăng xuất tài khoản</span>
           </div>
-          <ChevronRight size={18} color="#888" />
         </div>
       </div>
     </div>
@@ -569,6 +587,9 @@ const Profile = ({ onMenuClick }) => {
 };
 
 function App() {
+  const { user, userProfile } = useAuth();
+  const { courts, matches, loadingData } = useData(); 
+
   const [activeTab, setActiveTab] = useState('courts');
   const [bookingCourt, setBookingCourt] = useState(null);
   const [profileSubScreen, setProfileSubScreen] = useState(null);
@@ -578,11 +599,10 @@ function App() {
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [activeTxToSplit, setActiveTxToSplit] = useState(null);
-  const [matchesList, setMatchesList] = useState(MATCHES);
   const [joinedMatches, setJoinedMatches] = useState([]);
   const [balance, setBalance] = useState(450000);
   const [transactions, setTransactions] = useState(TRANSACTIONS);
-  const [walletTab, setWalletTab] = useState('history'); // history, debts
+  const [walletTab, setWalletTab] = useState('history'); 
   const [debtsList, setDebtsList] = useState(GROUP_DEBTS);
   const [toast, setToast] = useState(null);
 
@@ -602,7 +622,6 @@ function App() {
 
   const handleSplitConfirm = (tx, members, amountPerPerson, extraFee = 0) => {
     setShowSplitModal(false);
-    
     if (extraFee > 0) {
       const correctionTx = {
         id: Date.now(),
@@ -614,8 +633,6 @@ function App() {
       setTransactions(prev => [correctionTx, ...prev]);
       setBalance(prev => prev - extraFee);
     }
-
-    // Add new debts
     const newDebts = members.map((player, index) => ({
       id: Date.now() + index,
       name: player.name,
@@ -623,29 +640,46 @@ function App() {
       reason: `Chia tiền: ${tx.title}`,
       avatar: player.avatar
     }));
-
     setDebtsList(prev => [...newDebts, ...prev]);
     setToast(`Đã chia tiền và cập nhật nợ cho ${members.length} người!`);
   };
 
-  const handleConfirmBooking = (totalPrice) => {
+  const handleConfirmBooking = async (totalPrice, selectedSlots, selectedDate) => {
     const cost = totalPrice * 1000;
     if (balance < cost) {
       alert("Số dư không đủ! Vui lòng nạp thêm tiền.");
       return;
     }
 
-    setBalance(prev => prev - cost);
-    const newTx = {
-      id: Date.now(),
-      title: `Đặt sân tại ${bookingCourt.name}`,
-      amount: `-${cost.toLocaleString()}đ`,
-      date: 'Vừa xong',
-      type: 'payment'
-    };
-    setTransactions([newTx, ...transactions]);
-    setBookingCourt(null);
-    setToast("Đặt sân thành công!");
+    try {
+      await addDoc(collection(db, 'bookings'), {
+        courtId: bookingCourt.id,
+        courtName: bookingCourt.name,
+        ownerId: bookingCourt.ownerId || 'system_admin', 
+        playerId: user?.uid || 'unknown',
+        playerName: userProfile?.name || USER_STATS.name, 
+        amount: cost,
+        date: selectedDate,
+        time: selectedSlots.map(s => s.time).join(', '),
+        status: 'confirmed',
+        createdAt: serverTimestamp()
+      });
+
+      setBalance(prev => prev - cost);
+      const newTx = {
+        id: Date.now(),
+        title: `Đặt sân tại ${bookingCourt.name}`,
+        amount: `-${cost.toLocaleString()}đ`,
+        date: 'Vừa xong',
+        type: 'payment'
+      };
+      setTransactions([newTx, ...transactions]);
+      setBookingCourt(null);
+      setToast("Đặt sân thành công! Chủ sân đã nhận được doanh thu.");
+    } catch (error) {
+      console.error("Lỗi khi thanh toán:", error);
+      alert("Không thể hoàn tất giao dịch: " + error.message);
+    }
   };
 
   const handleJoinMatch = (match) => {
@@ -658,15 +692,30 @@ function App() {
     }
   };
 
-  const handleCreateMatch = (newMatch) => {
-    setMatchesList(prev => [newMatch, ...prev]);
-    setShowCreateMatch(false);
-    setToast("Đã đăng trận đấu mới!");
+  const handleCreateMatch = async (newMatch) => {
+    try {
+      await setDoc(doc(db, 'matches', newMatch.id.toString()), {
+        ...newMatch,
+        joinedPlayers: []
+      });
+      setShowCreateMatch(false);
+      setToast("Đã đăng trận đấu lên hệ thống Firebase!");
+    } catch (error) {
+      alert("Lỗi: " + error.message);
+    }
   };
+
+  if (loadingData) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', color: '#c3ff00' }}>
+        <h2>Đang tải dữ liệu Bản Đồ...</h2>
+      </div>
+    );
+  }
 
   const renderScreen = () => {
     if (bookingCourt) {
-      const relatedMatches = matchesList.filter(m => m.courtId === bookingCourt.id);
+      const relatedMatches = matches.filter(m => m.courtId === bookingCourt.id);
       return (
         <BookingDetail 
           court={bookingCourt} 
@@ -700,7 +749,7 @@ function App() {
             setViewingPlayer(player);
           }}
           isJoined={joinedMatches.some(m => m.id === activeMatchDetail.id)}
-          courts={COURTS}
+          courts={courts}
         />
       );
     }
@@ -710,7 +759,7 @@ function App() {
         <CreateMatchModal 
           onBack={() => setShowCreateMatch(false)}
           onCreate={handleCreateMatch}
-          courts={COURTS}
+          courts={courts}
         />
       );
     }
@@ -739,10 +788,10 @@ function App() {
     }
 
     switch(activeTab) {
-      case 'courts': return <Courts onBookCourt={setBookingCourt} />;
+      case 'courts': return <Courts courtsList={courts} onBookCourt={setBookingCourt} />;
       case 'community': return (
         <Matchmaking 
-          matches={matchesList} 
+          matches={matches} 
           onJoin={handleJoinMatch} 
           onSelect={setActiveMatchDetail}
           onCreateClick={() => setShowCreateMatch(true)}
@@ -762,13 +811,12 @@ function App() {
         />
       );
       case 'profile': return <Profile onMenuClick={setProfileSubScreen} />;
-      default: return <Courts onBookCourt={setBookingCourt} />;
+      default: return <Courts courtsList={courts} onBookCourt={setBookingCourt} />;
     }
   };
 
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
-    // Auto-close overlays on tab change
     setBookingCourt(null);
     setShowCreateMatch(false);
     setActiveMatchDetail(null);
