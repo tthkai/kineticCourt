@@ -3,13 +3,9 @@ import React from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext'; 
 
-// XÓA IMPORT MOCKDATA: Không dùng import { MATCH_HISTORY, ACHIEVEMENTS } nữa
-
-const MatchHistory = ({ onBack }) => {
-  const { userProfile } = useAuth();
-  
-  // Lấy lịch sử từ Firebase, nếu chưa có thì dùng mảng rỗng [] để không bị lỗi
-  const history = userProfile?.recentHistory || [];
+// Nhận historyData từ App.jsx
+const MatchHistory = ({ historyData, onBack }) => {
+  const history = historyData || [];
 
   return (
     <div className="screen-content booking-overlay active" style={{ padding: 0 }}>
@@ -52,7 +48,6 @@ const MatchHistory = ({ onBack }) => {
 const Achievements = ({ onBack }) => {
   const { userProfile } = useAuth();
   
-  // Danh sách huy hiệu gốc (Cái này có thể fix cứng vì nó là quy tắc của game)
   const ALL_ACHIEVEMENTS = [
     { id: 1, title: "Sát thủ sân cỏ", desc: "Thắng 10 trận liên tiếp", icon: "⚔️" },
     { id: 2, title: "Kẻ thách thức", desc: "Đấu với 5 đối thủ Chuyên nghiệp", icon: "🔥" },
@@ -61,7 +56,6 @@ const Achievements = ({ onBack }) => {
     { id: 5, title: "Legend", desc: "Đạt cấp độ 50", icon: "👑" }
   ];
 
-  // Kiểm tra xem user đã mở khóa huy hiệu nào chưa
   const unlockedIds = userProfile?.unlockedAchievements || [];
 
   return (
@@ -105,7 +99,6 @@ const SettingsPage = ({ onBack }) => {
          <div className="section-title"><h3>Tài khoản</h3></div>
          <div className="menu-list">
            <div className="menu-item"><span>Đổi mật khẩu</span></div>
-           {/* Hiển thị email thật từ Firebase */}
            <div className="menu-item"><span>Email: {userProfile?.email || 'Đang cập nhật'}</span></div>
          </div>
 

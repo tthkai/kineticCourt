@@ -407,7 +407,9 @@ const GroupWallet = ({ balance, transactions, debts, onDeposit, onOpenDeposit, o
   );
 };
 
-// CẬP NHẬT: Component Profile sử dụng Dữ liệu Lai và khôi phục giao diện đầy đủ
+// ─────────────────────────────────────────────────────────────
+// COMPONENT PROFILE HOÀN CHỈNH
+// ─────────────────────────────────────────────────────────────
 const Profile = ({ onMenuClick }) => {
   const { user, userProfile, logout } = useAuth();
   
@@ -439,7 +441,8 @@ const Profile = ({ onMenuClick }) => {
   const shieldText = isSpecialAccount ? displayData.level : (displayData.rank || 'Tân binh');
   const rankValue = isSpecialAccount ? displayData.rank : (displayData.level || 1);
 
-  const recentMatches = MATCH_HISTORY.slice(0, 3);
+  // Lấy lịch sử đấu (Dùng MATCH_HISTORY cho Nguyễn Văn A, hoặc data rỗng cho người mới)
+  const recentMatches = isSpecialAccount ? MATCH_HISTORY.slice(0, 3) : (displayData.recentHistory || []);
 
   return (
     <div className="screen-content" style={{ paddingBottom: '100px' }}>
@@ -471,7 +474,6 @@ const Profile = ({ onMenuClick }) => {
         
         <h2 style={{ fontSize: '2.5rem', marginTop: '25px', marginBottom: '8px' }}>{displayData.name}</h2>
         
-        {/* HIỂN THỊ CHỮ CẠNH KHIÊN: Tân binh / Trung bình */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--primary)', fontSize: '1rem', fontWeight: 'bold' }}>
           <Shield size={18} />
           <span>{shieldText}</span>
@@ -496,7 +498,6 @@ const Profile = ({ onMenuClick }) => {
       <div className="stats-grid mt-20">
         <div className="glass-card stat-box">
           <p className="muted">Hạng</p>
-          {/* HIỂN THỊ SỐ TRONG Ô HẠNG: 1 / 125 */}
           <div className="stat-value neon-text">{rankValue}</div>
         </div>
         <div className="glass-card stat-box">
@@ -508,7 +509,8 @@ const Profile = ({ onMenuClick }) => {
           <div className="stat-value">{displayData.matches || 0}</div>
         </div>
       </div>
-      {/* VỊ TRÍ KHÔI PHỤC: VỢT & LỐI CHƠI */}
+      
+      {/* KHÔI PHỤC: VỢT & LỐI CHƠI */}
       <div className="section-title">
         <h3>Vợt & Lối chơi</h3>
       </div>
@@ -517,24 +519,24 @@ const Profile = ({ onMenuClick }) => {
           <p className="muted" style={{ fontSize: '0.7rem', marginBottom: '4px' }}>Lối chơi</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Zap size={16} color="var(--primary)" />
-            <span style={{ fontWeight: 'bold' }}>{displayData.style || "Toàn diện"}</span>
+            <span style={{ fontWeight: 'bold' }}>{displayData.style || (isSpecialAccount ? "Toàn diện" : "Đang cập nhật")}</span>
           </div>
         </div>
         <div>
           <p className="muted" style={{ fontSize: '0.7rem', marginBottom: '4px' }}>Vợt yêu thích</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Rocket size={16} color="var(--primary)" />
-            <span style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>{displayData.gear || "Yonex Arcsaber 11 Play"}</span>
+            <span style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>{displayData.gear || (isSpecialAccount ? "Yonex Arcsaber 11 Play" : "Đang cập nhật")}</span>
           </div>
         </div>
       </div>
 
-      {/* VỊ TRÍ KHÔI PHỤC: TRẬN ĐẤU GẦN ĐÂY */}
+      {/* KHÔI PHỤC: TRẬN ĐẤU GẦN ĐÂY */}
       <div className="section-title">
         <h3>Trận đấu gần đây</h3>
       </div>
       <div className="history-preview">
-        {recentMatches.map(match => (
+        {recentMatches.length > 0 ? recentMatches.map(match => (
           <div key={match.id} className="glass-card" style={{ marginBottom: '10px', padding: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -549,13 +551,17 @@ const Profile = ({ onMenuClick }) => {
                 </div>
                 <div>
                   <h4 style={{ margin: 0, fontSize: '0.9rem' }}>vs {match.opponent}</h4>
-                  <p className="muted" style={{ fontSize: '0.65rem' }}>{match.date} • {match.location.split(' ').pop()}</p>
+                  <p className="muted" style={{ fontSize: '0.65rem' }}>{match.date} • {match.location ? match.location.split(' ').pop() : ''}</p>
                 </div>
               </div>
               <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{match.score}</div>
             </div>
           </div>
-        ))}
+        )) : (
+          <div className="glass-card" style={{ padding: '15px', textAlign: 'center' }}>
+            <p className="muted" style={{ fontSize: '0.85rem', margin: 0 }}>Chưa có lịch sử thi đấu.</p>
+          </div>
+        )}
       </div>
 
       <div className="menu-list mt-20">
@@ -574,7 +580,6 @@ const Profile = ({ onMenuClick }) => {
           <ChevronRight size={18} color="#888" />
         </div>
         
-        {/* Nút Đăng xuất */}
         <div className="menu-item" onClick={logout} style={{ marginTop: '20px', border: '1px solid rgba(255, 68, 68, 0.2)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#ff4444' }}>
             <LogOut size={18} />
@@ -714,6 +719,13 @@ function App() {
   }
 
   const renderScreen = () => {
+    // 1. Phân biệt người dùng
+    const specialEmails = ['hoangthanhtung2801@gmail.com', 'giakhang@gmail.com'];
+    const isSpecialAccount = specialEmails.includes(user?.email);
+    
+    // 2. Kéo dữ liệu lịch sử đấu chuẩn xác
+    const fullHistory = isSpecialAccount ? MATCH_HISTORY : (userProfile?.recentHistory || []);
+
     if (bookingCourt) {
       const relatedMatches = matches.filter(m => m.courtId === bookingCourt.id);
       return (
@@ -764,7 +776,11 @@ function App() {
       );
     }
 
-    if (profileSubScreen === 'Lịch sử thi đấu') return <MatchHistory onBack={() => setProfileSubScreen(null)} />;
+    // 3. TRUYỀN DỮ LIỆU historyData VÀO MÀN HÌNH SUB-SCREEN
+    if (profileSubScreen === 'Lịch sử thi đấu') {
+      return <MatchHistory historyData={fullHistory} onBack={() => setProfileSubScreen(null)} />;
+    }
+    
     if (profileSubScreen === 'Thành tích') return <Achievements onBack={() => setProfileSubScreen(null)} />;
     if (profileSubScreen === 'Cài đặt') return <SettingsPage onBack={() => setProfileSubScreen(null)} />;
 
